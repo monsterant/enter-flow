@@ -1,0 +1,2 @@
+# bash 스크립트는 Windows에서 받아도 줄바꿈이 LF여야 실행된다. CRLF로 바뀌면 "\r: command not found" 오류가 난다.
+skills/run-plan/scripts/* text eol=lf

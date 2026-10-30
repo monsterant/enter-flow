@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# Generate a review package: stat summary and the net diff with extended
+# context, written to a file the reviewer reads in one call.
+#
+# run-plan 변경: BASE와 HEAD는 커밋이 아니라 `scripts/snapshot`이 찍은 트리 해시다.
+# (최종 리뷰처럼 커밋을 넘겨도 된다. git diff는 커밋과 트리를 섞어 받는다.)
+# 단계마다 커밋하지 않으므로 커밋 목록 대신 바뀐 파일 목록만 담는다.
+#
+# Usage: review-package PLAN_FILE BASE HEAD [OUTFILE]
+# Default OUTFILE: <repo-root>/.run-plan/<plan-basename>/review-<base7>..<head7>.diff
+# (named per range, so a re-review after fixes gets a distinct fresh file).
+set -euo pipefail
+
+if [ $# -lt 3 ] || [ $# -gt 4 ]; then
+  echo "usage: review-package PLAN_FILE BASE HEAD [OUTFILE]" >&2
+  exit 2
+fi
+
+plan=$1
+base=$2
+head=$3
+[ -f "$plan" ] || { echo "no such plan file: $plan" >&2; exit 2; }
+
+git rev-parse --verify --quiet "${base}^{tree}" >/dev/null || { echo "bad BASE: $base" >&2; exit 2; }
+git rev-parse --verify --quiet "${head}^{tree}" >/dev/null || { echo "bad HEAD: $head" >&2; exit 2; }
+
+# 변경이 없으면 리뷰할 것이 없다. 스냅샷을 잘못 넘겼거나 구현자가 아무것도 안 바꾼 경우다.
+if git diff --quiet "$base" "$head"; then
+  echo "no changes between ${base} and ${head}" >&2
+  exit 3
+fi
+
+if [ $# -eq 4 ]; then
+  out=$4
+else
+  # Invoke via bash rather than direct exec: some extractors (Python zipfile)
+  # strip Unix exec bits when unpacking marketplace packages (#2040).
+  dir=$("${BASH:-bash}" "$(cd "$(dirname "$0")" && pwd)/sdd-workspace" "$plan")
+  out="$dir/review-$(git rev-parse --short "$base")..$(git rev-parse --short "$head").diff"
+fi
+
+{
+  echo "# Review package: ${base}..${head}"
+  echo
+  echo "## Files changed"
+  git diff --stat "$base" "$head"
+  echo
+  echo "## Diff"
+  git diff -U10 "$base" "$head"
+} > "$out"
+
+files=$(git diff --name-only "$base" "$head" | wc -l | tr -d ' ')
+echo "wrote ${out}: ${files} file(s), $(wc -c < "$out" | tr -d ' ') bytes"

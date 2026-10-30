@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# Extract one task's full text from an implementation plan into a file the
+# implementer reads in one call, so the task text never has to be pasted
+# through the controller's context.
+#
+# Usage: task-brief PLAN_FILE TASK_NUMBER [OUTFILE]
+# Default OUTFILE: <repo-root>/.run-plan/<plan-basename>/task-<N>-brief.md
+# (per plan and per worktree; concurrent runs of the SAME plan in the same
+# working tree share it).
+set -euo pipefail
+
+if [ $# -lt 2 ] || [ $# -gt 3 ]; then
+  echo "usage: task-brief PLAN_FILE TASK_NUMBER [OUTFILE]" >&2
+  exit 2
+fi
+
+plan=$1
+n=$2
+[ -f "$plan" ] || { echo "no such plan file: $plan" >&2; exit 2; }
+
+if [ $# -eq 3 ]; then
+  out=$3
+else
+  # Invoke via bash rather than direct exec: some extractors (Python zipfile)
+  # strip Unix exec bits when unpacking marketplace packages (#2040).
+  dir=$("${BASH:-bash}" "$(cd "$(dirname "$0")" && pwd)/sdd-workspace" "$plan")
+  out="$dir/task-${n}-brief.md"
+fi
+
+# run-plan 변경: /plan-it은 단계 제목을 "### 3단계: <제목>"으로 쓴다. 원본의 "### Task 3"과 둘 다 찾는다.
+# 또 /plan-it 계획은 단계 뒤에 "## 처리하지 않는 것" 같은 섹션이 이어진다. 원본은 다음 Task 제목이 나올
+# 때까지 전부 담아서 마지막 단계에 그 섹션들까지 딸려 들어갔다. 그래서 단계 제목과 같거나 더 높은
+# 수준의 제목(# 개수가 같거나 적은 제목)을 만나면 그 단계를 끝낸다.
+awk -v n="$n" '
+  /^```/ { infence = !infence }
+  !infence && /^#+[ \t]/ {
+    level = match($0, /[^#]/) - 1
+    if ($0 ~ /^#+[ \t]+(Task[ \t]+[0-9]+|[0-9]+단계)/) {
+      intask = ($0 ~ ("^#+[ \t]+(Task[ \t]+" n "([^0-9]|$)|" n "단계)"))
+      if (intask) tasklevel = level
+    } else if (intask && level <= tasklevel) {
+      intask = 0
+    }
+  }
+  intask { print }
+' "$plan" > "$out"
+
+if [ ! -s "$out" ]; then
+  echo "task ${n} not found in ${plan} (no heading matching 'Task ${n}' or '${n}단계')" >&2
+  exit 3
+fi
+
+echo "wrote ${out}: $(wc -l < "$out" | tr -d ' ') lines"

@@ -1,0 +1,7 @@
+{
+  "name": "enter",
+  "version": "0.1.0",
+  "description": "작업 시작 메뉴(autoEnterEnter)로 질문 정리 → 설계 → 구현 계획 → 에이전트 구현·리뷰를 순서대로 진행하는 스킬 묶음",
+  "author": { "name": "monsterant" },
+  "license": "MIT"
+}
